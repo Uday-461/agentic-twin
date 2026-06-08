@@ -12,6 +12,18 @@ import { LIMITS, MACHINES, START_POSE, type Rect } from "../world";
 export type LogLine = { t: number; level: "info" | "warn" | "error"; text: string };
 export type Sample = { t: number; measured: number; expected: number };
 
+export type ViewMode = "reality" | "split" | "twin";
+export type CameraMode = "overview" | "follow" | "top" | "free";
+
+/** Short-lived visual events the 3D scene animates, then drops after a few seconds. */
+export type Fx =
+  | { kind: "packet"; t: number; id: string; type: string }
+  | { kind: "ack"; t: number; ok: boolean }
+  | { kind: "ghost"; t: number; waypoints: { x: number; y: number }[]; label: string }
+  | { kind: "reject"; t: number; label: string };
+
+const FX_TTL_MS = 5000;
+
 const LIDAR_RAYS = 48;
 
 export class TwinController {
@@ -29,6 +41,14 @@ export class TwinController {
   history: Sample[] = [];
   log: LogLine[] = [];
   version = 0;
+
+  // View state shared by the HUD and the 3D scene.
+  view: ViewMode = "split";
+  cam: CameraMode = "overview";
+  focusId: string | null = null;
+  fx: Fx[] = [];
+  /** Text to prefill in the chat box (clicking a station in 3D sets it). */
+  draft = { text: "", n: 0 };
 
   private bus?: Bus;
   private worker?: Worker;
@@ -100,6 +120,7 @@ export class TwinController {
     if (prev?.mode !== t.mode) {
       if (t.mode === "estop") {
         this.note(`E-STOP: ${t.estopReason}`, "error");
+        this.cam = "follow";
         this.audit("plant.estop", { reason: t.estopReason });
       } else if (t.mode === "blocked") {
         this.note("AGV stopped: obstacle within 0.5 m", "warn");
@@ -114,7 +135,7 @@ export class TwinController {
     if (this.linkDown) return;
     this.note(`Plant ${a.status} ${a.type} ${a.cmdId.slice(0, 8)}${a.reason ? `: ${a.reason}` : ""}`, a.status === "rejected" ? "warn" : "info");
     this.audit("plant.ack", { ...a });
-    this.emit();
+    this.pushFx({ kind: "ack", t: Date.now(), ok: a.status === "executed" });
   }
 
   private checkSilence() {
@@ -129,8 +150,23 @@ export class TwinController {
 
   // ---- outbound ----
   dispatch(commands: SignedCommand[]) {
-    for (const c of commands) this.bus?.publish(topic(this.session, "cmd"), c);
+    for (const c of commands) {
+      this.bus?.publish(topic(this.session, "cmd"), c);
+      const p = JSON.parse(c.payload) as { id: string; type: string };
+      this.pushFx({ kind: "packet", t: Date.now(), id: p.id, type: p.type });
+    }
   }
+
+  pushFx(fx: Fx) {
+    const now = Date.now();
+    this.fx = [...this.fx.filter((f) => now - f.t < FX_TTL_MS), fx];
+    this.emit();
+  }
+
+  setView(v: ViewMode) { this.view = v; this.emit(); }
+  setCam(c: CameraMode) { this.cam = c; this.focusId = null; this.emit(); }
+  focus(id: string | null) { this.focusId = id; this.cam = "free"; this.emit(); }
+  setDraft(text: string) { this.draft = { text, n: this.draft.n + 1 }; this.emit(); }
 
   applyTwinOps(ops: TwinOp[]) {
     for (const op of ops) {

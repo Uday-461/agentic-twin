@@ -26,6 +26,24 @@ If Mosquitto isn't running the app falls back to an in-browser bus (header badge
 
 `npm test` runs the gate, signing, audit-chain, fusion, planner and retrieval tests.
 
+## The 3D view
+
+- **Reality / Split / Twin:** Reality is the physical floor (Kenney Factory Kit on epoxy
+  concrete). Twin is what the twin believes: holographic machine volumes, the LiDAR cloud and
+  reconciled obstacles. Split overlays both, and any physical object the twin doesn't know
+  about is caged in red as UNMAPPED.
+- **Agent in the scene:** accepted routes flow in cyan; signed commands fly from the fleet
+  controller mast to the AGV; acks pulse green/red; gate rejections draw the refused route in
+  red with the reason pinned at the destination.
+- **Sensor beams:** pink is what the plant's ultrasonic measured, cyan is what the twin
+  expected; a flashing red gap marks a disagreement.
+- **Camera:** Overview, Follow, Top, Free. Click any machine or dock to focus it and prefill
+  "Go to …" in the chat. E-STOP snaps the camera to the AGV.
+
+Rendering: three.js + react-three-fiber + drei, `@react-three/postprocessing` (N8AO ambient
+occlusion, bloom, AgX tone mapping, SMAA), Poly Haven warehouse HDRI for image-based lighting.
+Asset credits in `public/CREDITS.md`.
+
 ## Architecture
 
 ```
