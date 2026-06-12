@@ -4,7 +4,9 @@ import { connectBest, type Bus, type Transport } from "../bus";
 import { FusionMonitor, type FusionSnapshot } from "../fusion";
 import { forwardRange, raycast } from "../geometry";
 import { topic, type Ack, type SignedCommand, type Telemetry, type TwinOp, type TwinSnapshot, type WorldEvent } from "../protocol";
-import { LIMITS, MACHINES, START_POSE, type Rect } from "../world";
+import type { AgentReply } from "../server/agent";
+import { AGV, LIMITS, MACHINES, START_POSE, type Rect } from "../world";
+import type { ScenarioView } from "./scenarios";
 
 // The supervisor side of the twin, running in the page: heartbeats to the plant, telemetry
 // in, the twin's own sensor prediction, the cross-check, and link-silence detection.
@@ -47,8 +49,13 @@ export class TwinController {
   cam: CameraMode = "overview";
   focusId: string | null = null;
   fx: Fx[] = [];
-  /** Text to prefill in the chat box (clicking a station in 3D sets it). */
-  draft = { text: "", n: 0 };
+  /** Text for the chat box: clicking a station prefills it; scenarios also send it. */
+  draft = { text: "", n: 0, send: false };
+  agentBusy = false;
+  agentReplies = 0;
+  lastReply: AgentReply | null = null;
+  /** Set by the scenario runner (lib/client/scenarios.ts); read by the HUD. */
+  scenario: ScenarioView | null = null;
 
   private bus?: Bus;
   private worker?: Worker;
@@ -166,7 +173,32 @@ export class TwinController {
   setView(v: ViewMode) { this.view = v; this.emit(); }
   setCam(c: CameraMode) { this.cam = c; this.focusId = null; this.emit(); }
   focus(id: string | null) { this.focusId = id; this.cam = "free"; this.emit(); }
-  setDraft(text: string) { this.draft = { text, n: this.draft.n + 1 }; this.emit(); }
+  setDraft(text: string, send = false) { this.draft = { text, n: this.draft.n + 1, send }; this.emit(); }
+  setAgentBusy(busy: boolean) { this.agentBusy = busy; this.emit(); }
+  recordReply(r: AgentReply | null) { this.lastReply = r; this.agentReplies++; this.agentBusy = false; this.emit(); }
+  setScenario(v: ScenarioView | null) { this.scenario = v; this.emit(); }
+
+  /** Operator-signed setup move used by scenarios to start from a known station. */
+  async reposition(station: string) {
+    const res = await fetch("/api/operator", {
+      method: "POST",
+      body: JSON.stringify({ session: this.session, action: "reposition", station, pose: this.snapshot().pose, knownObstacles: this.knownObstacles }),
+    });
+    const { command, error } = await res.json();
+    if (error) throw new Error(error);
+    this.dispatch([command]);
+  }
+
+  /** Resolve true when `pred` holds, false on timeout. */
+  waitFor(pred: () => boolean, timeoutMs: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const t0 = Date.now();
+      const id = setInterval(() => {
+        if (pred()) { clearInterval(id); resolve(true); }
+        else if (Date.now() - t0 > timeoutMs) { clearInterval(id); resolve(false); }
+      }, 100);
+    });
+  }
 
   applyTwinOps(ops: TwinOp[]) {
     for (const op of ops) {
@@ -193,6 +225,25 @@ export class TwinController {
     this.audit("world.event", ev as unknown as Record<string, unknown>);
     this.note(describe(ev), "warn");
     this.emit();
+  }
+
+  /** Injector: drop a crate 1.8 m ahead along the current route (or straight ahead when idle). */
+  dropCrateAhead() {
+    const t = this.telemetry;
+    if (!t) return;
+    let p = { x: t.pose.x, y: t.pose.y };
+    let left = 1.8;
+    for (const wp of t.route) {
+      const d = Math.hypot(wp.x - p.x, wp.y - p.y);
+      if (d >= left) { p = { x: p.x + ((wp.x - p.x) * left) / d, y: p.y + ((wp.y - p.y) * left) / d }; left = 0; break; }
+      left -= d;
+      p = wp;
+    }
+    if (left > 0) {
+      const reach = AGV.length / 2 + 1.4;
+      p = { x: t.pose.x + Math.cos(t.pose.theta) * reach, y: t.pose.y + Math.sin(t.pose.theta) * reach };
+    }
+    this.world({ kind: "add_obstacle", rect: { id: `crate-${Date.now() % 100000}`, x: +p.x.toFixed(2), y: +p.y.toFixed(2), w: 0.6, h: 0.6 } });
   }
 
   setLinkDown(down: boolean) {

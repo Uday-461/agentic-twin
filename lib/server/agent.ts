@@ -150,13 +150,8 @@ class Run {
 
   /** Post-hoc hallucination check on the final reply: claims of movement with no accepted command. */
   checkReply(reply: string) {
-    const claimsMotion = /\b(moving|moved|heading|dispatched|sent|on (its|the) way|en route|driving)\b/i.test(reply);
-    if (!claimsMotion) return;
-    for (const st of STATIONS) {
-      const named = new RegExp(`\\b${st.id.replace("_", "[ _]")}\\b`, "i").test(reply);
-      if (named && !this.accepted.some((a) => a.station === st.id) && this.state.target !== st.id) {
-        this.trace.push({ kind: "warning", text: `Reply claims motion toward ${st.id}, but no command to ${st.id} was accepted this turn.` });
-      }
+    for (const st of unbackedMotionClaims(reply, this.accepted, this.state.target)) {
+      this.trace.push({ kind: "warning", text: `Reply claims motion toward ${st}, but no command to ${st} was accepted this turn.` });
     }
   }
 
@@ -232,4 +227,17 @@ function mockPlanner(run: Run, prompt: string): AgentReply {
   }
   const last = outputs.at(-1) ?? "";
   return run.result(last.startsWith("REJECTED") ? `Not executed. ${last}` : `Done. ${last}`, "mock-planner");
+}
+
+/**
+ * Stations the reply says the AGV is moving *to* ("heading to QC", "dispatched to the
+ * Receiving dock") that no accepted command backs. Mentions of where it is, or was, don't count.
+ */
+export function unbackedMotionClaims(reply: string, accepted: { station?: string }[], currentTarget: string | null): string[] {
+  const motion = String.raw`\b(?:heading|moving|driving|dispatched|sent|going|travell?ing|en route|on (?:its|the) way|routed)\b[^.;]{0,30}?\b(?:to|towards?|for)\s+(?:the\s+)?`;
+  return STATIONS.filter((st) => {
+    const name = st.id.replace("_", "[ _-]?");
+    const claimed = new RegExp(motion + name + String.raw`\b`, "i").test(reply);
+    return claimed && !accepted.some((a) => a.station === st.id) && currentTarget !== st.id;
+  }).map((s) => s.id);
 }

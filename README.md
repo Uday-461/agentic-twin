@@ -80,7 +80,21 @@ Next.js server ─────────────────────�
   Audit          data/audit.jsonl, SHA-256 hash chain, verified on every read
 ```
 
-## Demo script
+## Guided scenarios
+
+The Scenarios tab runs six guided jobs and drills. Each step waits for **Next**, then checks
+what happened against the safety design and marks it pass/fail:
+
+| Scenario | Shows |
+|---|---|
+| Kit delivery | Two-leg dispatch, route planning, signed commands |
+| QC sample run | The agent grounds speed in the manual (0.5 m/s QC zone) |
+| End of shift | "Park" resolved to the charger from procedure |
+| Speeding into QC | Parameter validator; agent self-correction |
+| Made-up destination | Hallucination guard |
+| Blocked aisle | Cross-check DISAGREE, supervisor halt, twin reconciliation, re-plan |
+
+## Demo script (manual)
 
 1. **Gate catches a limit:** "Take the parts to QC" → rejected (QC zone is 0.5 m/s). With a
    real model it reads the rejection and retries at 0.5 m/s on its own.

@@ -1,4 +1,4 @@
-import { runAgent, type ChatTurn } from "@/lib/server/agent";
+import { modelId, runAgent, type ChatTurn } from "@/lib/server/agent";
 import type { TwinSnapshot } from "@/lib/protocol";
 
 export async function POST(req: Request) {
@@ -9,4 +9,8 @@ export async function POST(req: Request) {
     const message = err instanceof Error ? err.message : String(err);
     return Response.json({ error: message }, { status: 502 });
   }
+}
+
+export async function GET() {
+  return Response.json({ model: modelId() });
 }

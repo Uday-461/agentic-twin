@@ -9,11 +9,10 @@ import { MACHINES, findStation } from "@/lib/world";
 type Msg = { role: "user" | "assistant"; content: string; trace?: TraceStep[]; model?: string; error?: boolean };
 
 const EXAMPLES = [
+  "What's the AGV's status?",
   "Take the parts to QC",
-  "Go to assembly cell B at 1.0 m/s",
-  "Send it to the paint shop",
-  "Set the speed limit to 0.6",
-  "Something is blocking the AGV, fix it and continue to shipping",
+  "Go to assembly cell B",
+  "Set the fleet speed limit to 0.6 m/s",
   "Stop",
 ];
 
@@ -24,13 +23,14 @@ export default function Chat({ ctrl }: { ctrl: TwinController }) {
   const end = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
 
-  // Clicking a station in the 3D view prefills the command.
-  const { text: draft, n: draftN } = ctrl.draft;
+  // Clicking a station in the 3D view prefills the command; scenarios also send it.
+  const { text: draft, n: draftN, send: autoSend } = ctrl.draft;
+  const sendRef = useRef<(t: string) => Promise<void>>(async () => {});
   useEffect(() => {
     if (!draftN) return;
-    setInput(draft);
-    field.current?.focus();
-  }, [draft, draftN]);
+    if (autoSend) void sendRef.current(draft);
+    else { setInput(draft); field.current?.focus(); }
+  }, [draft, draftN, autoSend]);
 
   async function send(text: string) {
     if (!text.trim() || busy) return;
@@ -38,6 +38,8 @@ export default function Chat({ ctrl }: { ctrl: TwinController }) {
     setMsgs(next);
     setInput("");
     setBusy(true);
+    ctrl.setAgentBusy(true);
+    let reply: AgentReply | null = null;
     setTimeout(() => end.current?.scrollIntoView({ behavior: "smooth" }), 30);
     try {
       const history = next.filter((m) => !m.error).slice(-10).map(({ role, content }) => ({ role, content }));
@@ -50,21 +52,26 @@ export default function Chat({ ctrl }: { ctrl: TwinController }) {
       ctrl.applyTwinOps(data.twinOps);
       ctrl.dispatch(data.commands);
       showRejections(ctrl, data.trace);
+      reply = data;
       setMsgs((m) => [...m, { role: "assistant", content: data.reply, trace: data.trace, model: data.model }]);
     } catch (err) {
       setMsgs((m) => [...m, { role: "assistant", content: `Agent error: ${(err as Error).message}`, error: true }]);
     } finally {
       setBusy(false);
+      ctrl.recordReply(reply);
       setTimeout(() => end.current?.scrollIntoView({ behavior: "smooth" }), 50);
     }
   }
+
+  useEffect(() => { sendRef.current = send; });
 
   return (
     <div className="chat">
       <div className="chat-log">
         {!msgs.length && (
           <div className="hint">
-            <p>Command the fleet in plain language. Every control action is screened by the safety gate, then signed before it reaches the AGV.</p>
+            <p>Instruct AGV-01 in plain language. Every control action is screened by the safety gate and signed before it reaches the vehicle. For guided runs, open the Scenarios tab.</p>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>Quick commands</div>
             <div className="examples">
               {EXAMPLES.map((e, i) => <button key={e} style={{ animationDelay: `${i * 60}ms` }} onClick={() => send(e)}><span>›</span>{e}</button>)}
             </div>
@@ -72,12 +79,12 @@ export default function Chat({ ctrl }: { ctrl: TwinController }) {
         )}
         {msgs.map((m, i) => (
           <div key={i} className={`msg ${m.role} ${m.error ? "error" : ""}`}>
-            <div className="who">{m.role === "user" ? "OPERATOR" : "AGENT"}{m.model && <em>{m.model}</em>}</div>
+            <div className="who">{m.role === "user" ? "Operator" : "Agent"}</div>
             {m.trace && m.trace.length > 0 && <Trace steps={m.trace} />}
             <div className="bubble">{m.content}</div>
           </div>
         ))}
-        {busy && <div className="msg assistant"><div className="who">AGENT</div><div className="bubble thinking"><i /><i /><i /> reasoning</div></div>}
+        {busy && <div className="msg assistant"><div className="who">Agent</div><div className="bubble thinking"><i /><i /><i /> reasoning</div></div>}
         <div ref={end} />
       </div>
       <form className="chat-input" onSubmit={(e) => { e.preventDefault(); void send(input); }}>

@@ -1,7 +1,7 @@
 "use client";
 
 import { CameraControls, Environment } from "@react-three/drei";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Bloom, EffectComposer, N8AO, SMAA, ToneMapping, Vignette } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
 import { Suspense, useEffect, useRef } from "react";
@@ -103,14 +103,30 @@ function PoseProbe({ pose }: { pose: ReturnType<typeof useSmoothedPose> }) {
   return null;
 }
 
-const PRESETS = {
-  overview: [-0.6, 17, 17.5, -0.6, 0, 1.2],
-  top: [0, 25, 0.01, 0, 0, 0],
-} as const;
+type LookAt = [number, number, number, number, number, number];
+
+/**
+ * Frame the whole arena for the current viewport: pick the camera distance along a fixed
+ * viewing angle so both the arena's width and its foreshortened depth fit.
+ */
+function framing(kind: "overview" | "top", aspect: number, fovDeg: number): LookAt {
+  const elev = kind === "top" ? Math.PI / 2 - 0.001 : (50 * Math.PI) / 180;
+  const vHalf = ((fovDeg / 2) * Math.PI) / 180;
+  const hHalf = Math.atan(Math.tan(vHalf) * aspect);
+  const halfW = 11, halfD = 7; // arena half-extents plus a margin, metres
+  const dW = halfW / Math.tan(hHalf) + halfD * Math.cos(elev);
+  const dD = (halfD * Math.sin(elev) + 1.2 * Math.cos(elev)) / Math.tan(vHalf) + halfD * Math.cos(elev) * 0.5;
+  const d = Math.max(dW, dD) * 1.02;
+  const tz = kind === "top" ? 0 : 0.6;
+  return [0, Math.sin(elev) * d, tz + Math.cos(elev) * d, 0, 0, tz];
+}
 
 function CameraRig({ ctrl }: { ctrl: TwinController }) {
   const cc = useRef<CameraControls>(null);
   const intro = useRef(true);
+  const size = useThree((st) => st.size);
+  const aspect = size.width / Math.max(1, size.height);
+  const preset = (kind: "overview" | "top") => framing(kind, aspect, 42);
 
   // Intro fly-in, then hand over to the selected preset.
   useEffect(() => {
@@ -118,19 +134,18 @@ function CameraRig({ ctrl }: { ctrl: TwinController }) {
     if (!c) return;
     c.smoothTime = 0.9;
     const t = setTimeout(() => {
-      void c.setLookAt(...PRESETS.overview, true).then(() => { intro.current = false; c.smoothTime = 0.35; });
+      void c.setLookAt(...preset("overview"), true).then(() => { intro.current = false; c.smoothTime = 0.35; });
     }, 250);
     const onStart = () => { if (!intro.current && ctrl.cam !== "free") ctrl.setCam("free"); };
     c.addEventListener("controlstart", onStart);
     return () => { clearTimeout(t); c.removeEventListener("controlstart", onStart); };
-  }, [ctrl]);
+  }, [ctrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const c = cc.current;
     if (!c || intro.current) return;
-    if (ctrl.cam === "overview") void c.setLookAt(...PRESETS.overview, true);
-    if (ctrl.cam === "top") void c.setLookAt(...PRESETS.top, true);
-  }, [ctrl.cam]);
+    if (ctrl.cam === "overview" || ctrl.cam === "top") void c.setLookAt(...preset(ctrl.cam), true);
+  }, [ctrl.cam, aspect]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const c = cc.current;

@@ -8,6 +8,7 @@ import { FusionMonitor } from "@/lib/fusion";
 import { segmentHitsRect } from "@/lib/geometry";
 import type { TwinSnapshot } from "@/lib/protocol";
 import { appendAudit, readAudit, verifyAudit } from "@/lib/server/audit";
+import { unbackedMotionClaims } from "@/lib/server/agent";
 import { applyToState, evaluate } from "@/lib/server/gate";
 import { searchManual } from "@/lib/server/rag";
 import { publicKeyX, signCommand } from "@/lib/server/signing";
@@ -141,5 +142,15 @@ describe("manual retrieval", () => {
   it("finds the QC speed rule and the sensor fault procedure", () => {
     expect(searchManual("QC speed limit")[0].text).toContain("0.5 m/s");
     expect(searchManual("sensor reads farther fault").map((h) => h.heading)).toContain("Sensor cross-validation (digital twin)");
+  });
+});
+
+describe("reply hallucination check", () => {
+  it("flags a claimed destination with no command behind it", () => {
+    expect(unbackedMotionClaims("AGV-01 is heading to QC now.", [], null)).toEqual(["QC"]);
+  });
+  it("ignores stations mentioned as the current location", () => {
+    const reply = "AGV-01 is dispatched to ASSEMBLY_A at 0.8 m/s (it was idle at the Receiving area).";
+    expect(unbackedMotionClaims(reply, [{ station: "ASSEMBLY_A" }], null)).toEqual([]);
   });
 });
