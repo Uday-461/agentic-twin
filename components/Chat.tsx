@@ -71,10 +71,6 @@ export default function Chat({ ctrl }: { ctrl: TwinController }) {
         {!msgs.length && (
           <div className="hint">
             <p>Instruct AGV-01 in plain language. Every control action is screened by the safety gate and signed before it reaches the vehicle. For guided runs, open the Scenarios tab.</p>
-            <div className="eyebrow" style={{ marginBottom: 6 }}>Quick commands</div>
-            <div className="examples">
-              {EXAMPLES.map((e, i) => <button key={e} style={{ animationDelay: `${i * 60}ms` }} onClick={() => send(e)}><span>›</span>{e}</button>)}
-            </div>
           </div>
         )}
         {msgs.map((m, i) => (
@@ -86,6 +82,9 @@ export default function Chat({ ctrl }: { ctrl: TwinController }) {
         ))}
         {busy && <div className="msg assistant"><div className="who">Agent</div><div className="bubble thinking"><i /><i /><i /> reasoning</div></div>}
         <div ref={end} />
+      </div>
+      <div className="quick" aria-label="Quick commands">
+        {EXAMPLES.map((e) => <button key={e} disabled={busy} onClick={() => void send(e)}>{e}</button>)}
       </div>
       <form className="chat-input" onSubmit={(e) => { e.preventDefault(); void send(input); }}>
         <span className="prompt">›</span>
@@ -118,7 +117,7 @@ function Trace({ steps }: { steps: TraceStep[] }) {
   return (
     <details className="trace">
       <summary>
-        <span>ReAct · {steps.length} steps</span>
+        <span>ReAct · {steps.length} {steps.length === 1 ? "step" : "steps"}</span>
         {signed > 0 && <span className="tag ok">{signed} signed</span>}
         {rejected > 0 && <span className="tag bad">{rejected} gated</span>}
         {warnings > 0 && <span className="tag warn">hallucination flag</span>}

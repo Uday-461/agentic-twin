@@ -149,7 +149,11 @@ h2, h3, h4 { margin: 0; font-weight: 600; }
 .thinking { color: var(--muted); display: flex; align-items: center; gap: 4px; }
 .thinking i { width: 5px; height: 5px; border-radius: 50%; background: var(--muted); animation: blink 1s infinite; }
 .thinking i:nth-child(2) { animation-delay: .15s; } .thinking i:nth-child(3) { animation-delay: .3s; margin-right: 6px; }
-.chat-input { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); }
+.quick { flex: none; display: flex; gap: 6px; padding: 8px 12px 0; overflow-x: auto; scrollbar-width: none; border-top: 1px solid var(--border); }
+.quick::-webkit-scrollbar { display: none; }
+.quick button { flex: none; height: 26px; padding: 0 10px; border-radius: 13px; border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text-2); font-size: 12px; white-space: nowrap; }
+.quick button:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+.chat-input { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 12px 10px; }
 .chat-input .prompt { display: none; }
 .chat-input input { flex: 1; height: 32px; padding: 0 10px; background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--r); color: var(--text); font: inherit; outline: 0; }
 .chat-input input:focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
@@ -168,7 +172,7 @@ h2, h3, h4 { margin: 0; font-weight: 600; }
 .trace li code { color: var(--muted); font-size: 11px; word-break: break-all; }
 .trace li p { margin: 2px 0 0; color: var(--text-2); }
 .trace li.warning p { color: var(--warn); }
-.trace pre { margin: 4px 0 0; white-space: pre-wrap; color: var(--muted); font-size: 11px; max-height: 110px; overflow: auto; }
+.trace pre { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); font-size: 11px; max-height: 110px; overflow: auto; }
 .tag { padding: 0 6px; border-radius: 3px; font: 500 11px var(--sans); }
 .tag.ok { background: rgba(63,185,80,.14); color: var(--ok); }
 .tag.bad { background: rgba(240,82,79,.14); color: var(--bad); }
