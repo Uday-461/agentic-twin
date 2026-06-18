@@ -105,20 +105,33 @@ function PoseProbe({ pose }: { pose: ReturnType<typeof useSmoothedPose> }) {
 
 type LookAt = [number, number, number, number, number, number];
 
+// Points that must stay in frame: arena floor corners (with a margin) and the top of the back wall.
+const FRAME_POINTS = [
+  [-10.6, 0, -6.4], [10.6, 0, -6.4], [-10.6, 0, 6.4], [10.6, 0, 6.4], [-10.6, 3, -6.6], [10.6, 3, -6.6],
+].map(([x, y, z]) => new THREE.Vector3(x, y, z));
+
 /**
- * Frame the whole arena for the current viewport: pick the camera distance along a fixed
- * viewing angle so both the arena's width and its foreshortened depth fit.
+ * Frame the whole arena for the current viewport: along a fixed viewing angle, binary-search
+ * the closest camera distance at which every frame point still projects inside the screen.
  */
 function framing(kind: "overview" | "top", aspect: number, fovDeg: number): LookAt {
-  const elev = kind === "top" ? Math.PI / 2 - 0.001 : (50 * Math.PI) / 180;
-  const vHalf = ((fovDeg / 2) * Math.PI) / 180;
-  const hHalf = Math.atan(Math.tan(vHalf) * aspect);
-  const halfW = 11, halfD = 7; // arena half-extents plus a margin, metres
-  const dW = halfW / Math.tan(hHalf) + halfD * Math.cos(elev);
-  const dD = (halfD * Math.sin(elev) + 1.2 * Math.cos(elev)) / Math.tan(vHalf) + halfD * Math.cos(elev) * 0.5;
-  const d = Math.max(dW, dD) * 1.02;
-  const tz = kind === "top" ? 0 : 0.6;
-  return [0, Math.sin(elev) * d, tz + Math.cos(elev) * d, 0, 0, tz];
+  const elev = kind === "top" ? Math.PI / 2 - 0.001 : (52 * Math.PI) / 180;
+  const target = new THREE.Vector3(0, 0, kind === "top" ? 0 : 0.3);
+  const dir = new THREE.Vector3(0, Math.sin(elev), Math.cos(elev));
+  const cam = new THREE.PerspectiveCamera(fovDeg, aspect, 0.1, 500);
+  const fits = (d: number) => {
+    cam.position.copy(target).addScaledVector(dir, d);
+    cam.lookAt(target);
+    cam.updateMatrixWorld();
+    return FRAME_POINTS.every((p) => {
+      const v = p.clone().project(cam);
+      return Math.abs(v.x) <= 0.94 && Math.abs(v.y) <= 0.9;
+    });
+  };
+  let lo = 4, hi = 120;
+  for (let i = 0; i < 30; i++) { const mid = (lo + hi) / 2; if (fits(mid)) hi = mid; else lo = mid; }
+  const p = target.clone().addScaledVector(dir, hi);
+  return [p.x, p.y, p.z, target.x, target.y, target.z];
 }
 
 function CameraRig({ ctrl }: { ctrl: TwinController }) {

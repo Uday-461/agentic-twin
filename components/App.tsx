@@ -49,6 +49,8 @@ function Shell({ ctrl }: { ctrl: TwinController }) {
   useSyncExternalStore(ctrl.subscribe, ctrl.getVersion, ctrl.getVersion);
   const runner = useMemo(() => new ScenarioRunner(ctrl), [ctrl]);
   const [tab, setTab] = useState<RightTab>("scenarios");
+  const [leftOpen, setLeftOpen] = usePersisted("panel-left", true);
+  const [rightOpen, setRightOpen] = usePersisted("panel-right", true);
   const [model, setModel] = useState("…");
   useEffect(() => { void fetch("/api/agent").then((r) => r.json()).then((d) => setModel(d.model)); }, []);
 
@@ -58,7 +60,7 @@ function Shell({ ctrl }: { ctrl: TwinController }) {
   const mode = ctrl.linkLost ? "No telemetry" : cap(t?.mode ?? "idle");
 
   return (
-    <div className="app">
+    <div className={`app ${leftOpen ? "" : "left-collapsed"} ${rightOpen ? "" : "right-collapsed"}`}>
       <header className="appbar">
         <div className="appbar-brand"><Logo /><span>Agentic Twin</span></div>
         <nav className="crumbs"><span>Plant 01</span><i>/</i><span>Assembly floor</span><i>/</i><b>AGV-01</b></nav>
@@ -77,11 +79,16 @@ function Shell({ ctrl }: { ctrl: TwinController }) {
       </header>
 
       <aside className="side side-left">
-        <div className="side-head">
-          <h2>Agent console</h2>
-          <span className="pill">{model}</span>
+        {/* Chat stays mounted when collapsed: it owns the conversation and scenarios send through it. */}
+        <div className="side-content" hidden={!leftOpen}>
+          <div className="side-head">
+            <h2>Agent console</h2>
+            <span className="pill">{model}</span>
+            <CollapseButton side="left" open onClick={() => setLeftOpen(false)} />
+          </div>
+          <Chat ctrl={ctrl} />
         </div>
-        <Chat ctrl={ctrl} />
+        {!leftOpen && <Rail side="left" label="Agent console" onOpen={() => setLeftOpen(true)} busy={ctrl.agentBusy} />}
       </aside>
 
       <main className={`viewport ${estop ? "is-estop" : ""} ${disagree ? "is-disagree" : ""} ${ctrl.linkLost ? "is-linklost" : ""}`}>
@@ -114,6 +121,10 @@ function Shell({ ctrl }: { ctrl: TwinController }) {
       </main>
 
       <aside className="side side-right">
+        {!rightOpen ? (
+          <Rail side="right" label={ctrl.scenario ? `Scenario · ${ctrl.scenario.title}` : "Scenarios · Monitoring · Faults · Audit"} onOpen={() => setRightOpen(true)} alert={disagree} busy={!!ctrl.scenario} />
+        ) : (
+        <>
         <div className="tabs" role="tablist">
           {([["scenarios", "Scenarios"], ["monitor", "Monitoring"], ["faults", "Faults"], ["audit", "Audit"]] as [RightTab, string][]).map(([k, label]) => (
             <button key={k} role="tab" className={tab === k ? "on" : ""} onClick={() => setTab(k)}>
@@ -122,6 +133,7 @@ function Shell({ ctrl }: { ctrl: TwinController }) {
               {k === "scenarios" && ctrl.scenario && <i className="dot info" />}
             </button>
           ))}
+          <CollapseButton side="right" open onClick={() => setRightOpen(false)} />
         </div>
         <div className="tab-body">
           {tab === "scenarios" && <Scenarios ctrl={ctrl} runner={runner} />}
@@ -129,6 +141,8 @@ function Shell({ ctrl }: { ctrl: TwinController }) {
           {tab === "faults" && <Section title="Fault injection"><Injector ctrl={ctrl} /></Section>}
           {tab === "audit" && <Section title="Audit chain" grow><Audit /></Section>}
         </div>
+        </>
+        )}
       </aside>
 
       <footer className="statusbar">
@@ -140,6 +154,38 @@ function Shell({ ctrl }: { ctrl: TwinController }) {
         <span>Agent {model}</span>
       </footer>
     </div>
+  );
+}
+
+/** Boolean UI preference stored in localStorage. */
+function usePersisted(key: string, initial: boolean): [boolean, (v: boolean) => void] {
+  const [v, setV] = useState(() => {
+    if (typeof window === "undefined") return initial;
+    const raw = localStorage.getItem(key);
+    return raw === null ? initial : raw === "1";
+  });
+  return [v, (next: boolean) => { localStorage.setItem(key, next ? "1" : "0"); setV(next); }];
+}
+
+function CollapseButton({ side, open, onClick }: { side: "left" | "right"; open: boolean; onClick: () => void }) {
+  return (
+    <button className="collapse-btn" onClick={onClick} aria-label={open ? "Collapse panel" : "Expand panel"} title={open ? "Collapse panel" : "Expand panel"}>
+      <Chevron left={(side === "left") === open} />
+    </button>
+  );
+}
+
+function Chevron({ left }: { left: boolean }) {
+  return <svg viewBox="0 0 16 16" aria-hidden><path d={left ? "M10 3 5 8l5 5" : "M6 3l5 5-5 5"} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+
+function Rail({ side, label, onOpen, alert, busy }: { side: "left" | "right"; label: string; onOpen: () => void; alert?: boolean; busy?: boolean }) {
+  return (
+    <button className="rail" onClick={onOpen} title={`Expand ${label}`} aria-label={`Expand ${label}`}>
+      <span className="rail-chevron"><Chevron left={side === "right"} /></span>
+      <span className="rail-label">{label}</span>
+      {(alert || busy) && <i className={`dot ${alert ? "bad" : "info"}`} />}
+    </button>
   );
 }
 
